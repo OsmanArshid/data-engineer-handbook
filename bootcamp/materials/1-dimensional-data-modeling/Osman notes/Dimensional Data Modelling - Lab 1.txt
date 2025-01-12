@@ -1,4 +1,4 @@
-                                                              DATA MODELLING LAB 1
+                                                           DIMENSIONAL DATA MODELLING LAB 1
 								For PostgresSQL
 
 -- Making a master data table by the help of 
@@ -24,6 +24,9 @@
 -- 			reb REAL,
 -- 			ast REAL
 -- );
+-- DROP TYPE season_stats
+
+-- CREATE TYPE scoring_class AS ENUM ('star', 'good', 'avg', 'bad')
 
 -- seperating the values that will stay the same and combining the season stats struct as an array
 -- CREATE TABLE players( 
@@ -34,14 +37,18 @@
 -- 		draft_year TEXT, 
 -- 		draft_round TEXT,
 --      draft_number TEXT,
---      season_real_things season_real_things[],
+--      season_stats season_stats[],
+-- 		scoring_class scoring_class,
+-- 		years_since_last_played INTEGER,
 --      current_season INTEGER,
 --      PRIMARY KEY (player_name, current_season)
 -- );
-
+ 
 -- checking which year to start from, for the Master table
 -- SELECT MIN(season) 
 -- FROM player_seasons;
+
+-- DROP TABLE players
 
 INSERT INTO players
 WITH 
@@ -80,29 +87,52 @@ SELECT
 	COALESCE (t.draft_number, y.draft_number) AS draft_number,
 
 	CASE 
-		WHEN y.season_real_things IS NULL
+		WHEN y.season_stats IS NULL
 		THEN ARRAY[ROW(
 				t.season,
 				t.gp,
 				t.pts,
 				t.reb,
 				t.ast
-		)::season_real_things]
+		)::season_stats]
 
 
 		WHEN t.season IS NOT NULL
-		THEN y.season_real_things || ARRAY[ROW(
+		THEN y.season_stats || ARRAY[ROW(
 				t.season,
 				t.gp,
 				t.pts,
 				t.reb,
 				t.ast
-		)::season_real_things]
+		)::season_stats]
 
-		ELSE y.season_real_things
+		ELSE y.season_stats
 	END
-		as season_real_things,
+		AS season_stats,
 
+	-- scoring_class
+	CASE
+		WHEN t.season IS NOT NULL
+		THEN CASE
+				WHEN t.pts > 20 THEN 'star'
+				WHEN t.pts > 15 THEN 'good'
+				WHEN t.pts > 7 THEN 'avg'
+				ELSE 'bad'
+			END::scoring_class
+		ELSE y.scoring_class
+	END
+		AS scoring_class,
+
+	
+	-- YEARS_SINCE_LAST_PLAYED
+	CASE 
+		WHEN t.season IS NOT NULL
+		THEN 0
+		ELSE y.years_since_last_played + 1
+	END 
+		AS years_since_last_played,
+
+	
 -- there is another case where we wanna do a simple
 -- thing and +1 the current_season in yesterday
 	-- CASE
@@ -110,8 +140,8 @@ SELECT
 		-- 	THEN t.season
 	
 		-- 	ELSE y.current_season + 1
-		-- END 
-	-- 	as	
+	-- END 
+		-- 	as	
 
 -- a better way to do this sam eabove case is COALESCE
 	COALESCE (t.season, y.current_season + 1) as current_season
@@ -122,35 +152,68 @@ ON t.player_name = y.player_name;
 
 
 
--- now all the players will have 2 structs in the array of "season_real_things"
+-- now all the players will have 2 structs in the array of "season_stats"
 -- one with 1996, and other with 1997, and some players will have only 1 year -> 1997
 -- and it builds so on
-SELECT * 
-FROM players 
-WHERE current_season = 1997;
+-- SELECT * 
+-- FROM players 
+-- WHERE current_season = 2001;
 
 
 
 -- to get and read specific stats
-SELECT * 
-FROM players 
+-- SELECT * 
+-- FROM players 
+-- WHERE current_season = 2001
+-- AND player_name = 'Michael Jordan';
+
+
+
+-- Lets do some analytics now
+SELECT 
+	player_name,
+	(season_stats[1]::season_stats).pts AS F_S,
+	(season_stats[1]::season_stats).season AS F_S_Season,
+	(season_stats[CARDINALITY(season_stats)]::season_stats).pts AS L_S,
+	(season_stats[CARDINALITY(season_stats)]::season_stats).season AS L_S_Season
+	
+FROM players
 WHERE current_season = 2001
-AND player_name = 'Michael Jordan';
+
+
+-- to see just the pts of the players and how much they improved
+-- ONE THING TO NOTE is there is no "GROUP BY"
+-- So this query is super Fast
+SELECT	
+	player_name,
+	-- here cardinality is giving the last season date in this cumulated table (i.e., 2001)
+	(season_stats[CARDINALITY(season_stats)]::season_stats).pts/
+	(CASE 
+		WHEN (season_stats[1]::season_stats).pts = 0
+		THEN 1
+		ELSE (season_stats[1]::season_stats).pts
+	END)
+	
+FROM players
+WHERE current_season = 2001
+ORDER BY 2 DESC
+
 
 
 
 -- -- so we accumulated all the data together, there is a way 
 -- -- to explode the data back into the original coloums by UNNEST
+
 -- WITH unnested_data AS (
 -- 	SELECT player_name,
--- 		UNNEST(season_real_things)::season_real_things AS season_real_things
+-- 		UNNEST(season_stats)::season_stats AS season_stats
 -- 	FROM players
 -- 	WHERE current_season = 2001
 -- 	--AND player_name = 'Michael Jordan'
 -- )
 -- SELECT player_name,
 -- 	-- the .* gives all the columns rather than individual
--- 	(season_real_things::season_real_things).*
+-- 	(season_stats::season_stats).*
 -- FROM unnested_data
 -- -- And the table that is outputed has all the player_names as sorted 
 -- -- form min(season) to max
