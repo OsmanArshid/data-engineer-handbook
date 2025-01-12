@@ -1,4 +1,5 @@
---                                                              DATA MODELLING LAB 1
+                                                              DATA MODELLING LAB 1
+								For PostgresSQL
 
 -- Making a master data table by the help of 
 -- "cumulative table" technique
@@ -11,8 +12,8 @@
 -- SELECT * 
 -- FROM player_seasons;
 
-SELECT *
-FROM players;
+-- SELECT *
+-- FROM players;
 
 -- we are making the type on just the attributes that change and also we kinda understand
 -- this is a data type of its own
@@ -33,7 +34,7 @@ FROM players;
 -- 		draft_year TEXT, 
 -- 		draft_round TEXT,
 --      draft_number TEXT,
---      season_stats season_stats[],
+--      season_real_things season_real_things[],
 --      current_season INTEGER,
 --      PRIMARY KEY (player_name, current_season)
 -- );
@@ -42,53 +43,68 @@ FROM players;
 -- SELECT MIN(season) 
 -- FROM player_seasons;
 
--- WITH 
--- 	yesterday AS (
--- 	SELECT * from players
--- 	WHERE current_season = 1995
--- 	),
+INSERT INTO players
+WITH 
+	-- THIS IS THE SEED QUERY 
+	-- After this, we only have to change the season values 
+	-- and today will become yesterday, and upon every 
+	-- change, the table keeps on building
+	
+	-- yesterday AS (
+	-- SELECT * from players
+	-- WHERE current_season = 1995 -> 1996 -> 1997 -> 1998 -> 1999 -> 2000
+	-- ),
 
--- 	today AS (
--- 	SELECT * FROM player_seasons
--- 	WHERE season = 1996
--- 	)
+	-- today AS (
+	-- SELECT * FROM player_seasons
+	-- WHERE season = 1996 -> 1997 -> 1998 -> 1999 -> 2000 -> 2001
+	-- )
 
--- SELECT
--- 	COALESCE (t.player_name, y.player_name) AS player_name,
--- 	COALESCE (t.height, y.height) AS height,
--- 	COALESCE (t.college, y.college) AS college,
--- 	COALESCE (t.country, y.country) AS country,
--- 	COALESCE (t.draft_year, y.draft_year) AS draft_year,
--- 	COALESCE (t.draft_round, y.draft_round) AS draft_round,
--- 	COALESCE (t.draft_number, y.draft_number) AS draft_number,
+	yesterday AS (
+	SELECT * from players
+	WHERE current_season = 2000
+	),
 
--- 	CASE 
--- 		WHEN y.season_stats IS NULL
--- 		THEN ARRAY[ROW(
--- 				t.season,
--- 				t.gp,
--- 				t.pts,
--- 				t.reb,
--- 				t.ast
--- 		)::season_stats]
+	today AS (
+	SELECT * FROM player_seasons
+	WHERE season = 2001
+	)
+
+SELECT
+	COALESCE (t.player_name, y.player_name) AS player_name,
+	COALESCE (t.height, y.height) AS height,
+	COALESCE (t.college, y.college) AS college,
+	COALESCE (t.country, y.country) AS country,
+	COALESCE (t.draft_year, y.draft_year) AS draft_year,
+	COALESCE (t.draft_round, y.draft_round) AS draft_round,
+	COALESCE (t.draft_number, y.draft_number) AS draft_number,
+
+	CASE 
+		WHEN y.season_real_things IS NULL
+		THEN ARRAY[ROW(
+				t.season,
+				t.gp,
+				t.pts,
+				t.reb,
+				t.ast
+		)::season_real_things]
 
 
--- 		WHEN t.season IS NOT NULL
--- 		THEN y.season_stats || ARRAY[ROW(
--- 				t.season,
--- 				t.gp,
--- 				t.pts,
--- 				t.reb,
--- 				t.ast
--- 		)::season_stats]
+		WHEN t.season IS NOT NULL
+		THEN y.season_real_things || ARRAY[ROW(
+				t.season,
+				t.gp,
+				t.pts,
+				t.reb,
+				t.ast
+		)::season_real_things]
 
--- 		ELSE y.season_stats
--- 	END
--- 		as season_stats,
+		ELSE y.season_real_things
+	END
+		as season_real_things,
 
 -- there is another case where we wanna do a simple
 -- thing and +1 the current_season in yesterday
-
 	-- CASE
 		-- 	WHEN t.season IS NOT NULL 
 		-- 	THEN t.season
@@ -98,7 +114,43 @@ FROM players;
 	-- 	as	
 
 -- a better way to do this sam eabove case is COALESCE
--- 	COALESCE (t.season, y.current_season + 1) as current_season
+	COALESCE (t.season, y.current_season + 1) as current_season
   
--- FROM today t FULL OUTER JOIN yesterday y
--- ON t.player_name = y.player_name
+FROM today t FULL OUTER JOIN yesterday y
+ON t.player_name = y.player_name;
+-- Till here, the Cumulative Table is outputed, nd from here we can build upon it
+
+
+
+-- now all the players will have 2 structs in the array of "season_real_things"
+-- one with 1996, and other with 1997, and some players will have only 1 year -> 1997
+-- and it builds so on
+SELECT * 
+FROM players 
+WHERE current_season = 1997;
+
+
+
+-- to get and read specific stats
+SELECT * 
+FROM players 
+WHERE current_season = 2001
+AND player_name = 'Michael Jordan';
+
+
+
+-- -- so we accumulated all the data together, there is a way 
+-- -- to explode the data back into the original coloums by UNNEST
+-- WITH unnested_data AS (
+-- 	SELECT player_name,
+-- 		UNNEST(season_real_things)::season_real_things AS season_real_things
+-- 	FROM players
+-- 	WHERE current_season = 2001
+-- 	--AND player_name = 'Michael Jordan'
+-- )
+-- SELECT player_name,
+-- 	-- the .* gives all the columns rather than individual
+-- 	(season_real_things::season_real_things).*
+-- FROM unnested_data
+-- -- And the table that is outputed has all the player_names as sorted 
+-- -- form min(season) to max
